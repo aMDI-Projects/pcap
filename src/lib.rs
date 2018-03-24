@@ -202,10 +202,17 @@ impl Device {
     /// or an error from pcap.
     pub fn lookup() -> Result<Device, Error> {
         with_errbuf(|err| unsafe {
-            cstr_to_string(raw::pcap_lookupdev(err))
-                ?
-                .map(|name| Device::new(name, None))
-                .ok_or_else(|| Error::new(err))
+            let mut dev_buf: *mut raw::pcap_if_t = ptr::null_mut();
+            if raw::pcap_findalldevs(&mut dev_buf, err) != 0 {
+                return Err(Error::new(err));
+            }
+            let result = (|| {
+                let dev = &*dev_buf;
+                let device = Device::new(cstr_to_string(dev.name)?.ok_or(InvalidString)?, cstr_to_string(dev.description)?);
+                Ok(device)
+            })();
+            raw::pcap_freealldevs(dev_buf);
+            result
         })
     }
 
